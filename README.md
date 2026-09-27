@@ -1,2 +1,35 @@
-# fintrust-ml-ops
-Here is the technical specification and architectural roadmap for the ML Engineering track of the FinTrust Digital Bank project.
+# FinTrust Digital Bank — ML Risk Intelligence Workflow
+
+Automated risk evaluation engine and reproducible ML workflow for transaction monitoring.
+
+## Project Structure
+```text
+fintrust-ml-ops/
+|-- .github/
+|   |__workflow
+|-- data/
+|   |--proceed/
+|   |--raw/
+|       |--customer.csv
+|       |--data_dictionary.csv
+|       |--transaction.csv
+|       |__dataeplore.py
+├── src/
+│   ├── data_validation.py   # Pydantic data schemas & validation rules
+│   ├── preprocessing.py     # Scikit-learn feature transformers
+│   ├── pipeline.py          # End-to-end execution workflow
+│   └── api/
+│       └── main.py          # FastAPI REST service
+├── tests/
+│   └── test_workflow.py     # Pytest test suite
+├── requirements.txt         # Dependencies
+└── README.md
+
+##1. Run Technical Tests
+###Execute the test suite to verify pipeline functionality:
+
+pytest tests/
+
+##2. Launch Local API Service
+
+uvicorn src.api.main:app --reload
