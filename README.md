@@ -33,11 +33,15 @@ fintrust-ml-ops/
 ├── requirements.txt         # Dependencies
 └── README.md
 
-##1. Run Technical Tests
+## 1. Run Technical Tests
 ###Execute the test suite to verify pipeline functionality:
 
 pytest tests/
 
-##2. Launch Local API Service
+## 2. Launch Local API Service
 
 uvicorn src.api.main:app --reload
+
+## 3. Adding the link to the report in google drive
+
+https://docs.google.com/document/d/1L6VCCLtpMjZurzRBXaXksq_r7PV8dSLE/edit?usp=sharing&ouid=116237319703101527954&rtpof=true&sd=true
