@@ -1,18 +1,16 @@
 # src/data_validation.py
 """
-Validation des données FinTrust.
+Validation data Fintrust
 
-Deux datasets → deux schémas Pydantic :
-- CustomerRow       : une ligne du fichier client
-- TransactionRow    : une ligne du fichier transactions
+- CustomerRow       : one row of the customers file
+- TransactionRow    : one row of the transactions file
 
-Plus deux fonctions de validation DataFrame :
 - validate_customers(df)
 - validate_transactions(df)
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import pandas as pd
@@ -22,17 +20,23 @@ from src import config
 
 
 # ============================================================
-# 1. SCHÉMA CLIENT
+# 1. CLIENT SCHEMA
 # ============================================================
 class CustomerRow(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)            ##saying that we don't want any extra fields and we want to strip whitespace from strings
 
-    customer_id: str = Field(..., min_length=4, max_length=32)
+    customer_id: str = Field(..., validation_alias=config.CUSTOMER_ID_PATTERN)  ##the customer id must match the pattern defined in config.py
+    customer_name: str = Field(..., min_length=2, max_length=100)  ##the customer name must be between 2 and 100 characters
     age: int = Field(..., ge=config.MIN_AGE, le=config.MAX_AGE)
-    gender: str
-    country: str = Field(..., min_length=2, max_length=56)
-    signup_date: datetime
-    income: float = Field(..., ge=0)
+    gender: str = Field(..., validation_alias=config.VALID_GENDERS)
+    city: str = Field(..., min_length=2, max_length=56)
+    customer_segment: str = Field(..., validation_alias=config.VALID_CUSTOMER_SEGMENTS)
+    monthly_income_band: str = Field(..., validation_alias=config.MONTHLY_INCOME_BANDS)
+    preferred_channel: str = Field(..., validation_alias=config.VALID_PREFERRED_CHANNELS)
+    tenure_months: int = Field(..., ge=config.MIN_TENURE_MONTHS, le=config.MAX_TENURE_MONTHS)
+    account_type: str = Field(..., validation_alias=config.VALID_ACCOUNT_TYPES)
+    digital_engagement_score: float = Field(..., ge=10, le=100)
+    account_status: str = Field(..., validation_alias=config.VALID_ACCOUNT_STATUS)
 
     @field_validator("gender")
     @classmethod
@@ -45,27 +49,22 @@ class CustomerRow(BaseModel):
 
 
 # ============================================================
-# 2. SCHÉMA TRANSACTION
+# 2. TRANSACTION SCHEMA
 # ============================================================
 class TransactionRow(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    transaction_id: str = Field(..., min_length=4, max_length=64)
-    customer_id: str = Field(..., min_length=4, max_length=32)
-    amount: float = Field(..., gt=config.MIN_AMOUNT, le=config.MAX_AMOUNT)
-    currency: str = Field(..., pattern=r"^[A-Z]{3}$")
-    transaction_type: str
-    timestamp: datetime
-
-    @field_validator("currency")
-    @classmethod
-    def currency_must_be_supported(cls, v: str) -> str:
-        if v not in config.VALID_CURRENCIES:
-            raise ValueError(
-                f"Devise '{v}' non supportée. "
-                f"Attendu : {sorted(config.VALID_CURRENCIES)}"
-            )
-        return v
+    transaction_id: str = Field(..., validation_alias=config.TRANSACTION_ID_PATTERN)
+    customer_id: str = Field(..., validation_alias=config.CUSTOMER_ID_PATTERN)
+    amount_ngn: float = Field(..., ge=100.0)
+    transaction_type: str = Field(..., validation_alias=config.VALID_TRANSACTION_TYPES)
+    channel: str = Field(..., validation_alias=config.VALID_CHANNEL)
+    device_type: str = Field(..., validation_alias=config.VALID_DEVICE_TYPE)
+    location: str = Field(..., min_length=2, max_length=56)
+    transaction_date: datetime = Field(..., validation_alias=config.TRANSACTION_DATE_FORMAT)
+    international_transaction: str = Field(..., validation_alias=config.VALID_INTERNATIONAL_TRANSACTION)
+    transaction_status: str = Field(..., validation_alias=config.VALID_TRANSACTION_STATUS)
+    risk_review_flag: str = Field(..., validation_alias=config.VALID_RISK_REVIEW_FLAG)
 
     @field_validator("transaction_type")
     @classmethod
@@ -77,19 +76,19 @@ class TransactionRow(BaseModel):
             )
         return v
 
-    @field_validator("timestamp")
+    @field_validator("transaction_date")
     @classmethod
     def timestamp_not_in_future(cls, v: datetime) -> datetime:
-        if v > datetime.utcnow():
+        if v > datetime.now(timezone.utc):
             raise ValueError("timestamp ne peut pas être dans le futur")
         return v
 
 
 # ============================================================
-# 3. ERREUR PERSONNALISÉE
+# 3. PERSONNALIZED ERROR
 # ============================================================
 class DataValidationError(Exception):
-    """Erreur levée quand un dataset est invalide (contient le rapport complet)."""
+    """Raised when a dataset fails validation. Contains a detailed report."""
     def __init__(self, dataset_name: str, report: dict):
         self.dataset_name = dataset_name
         self.report = report
@@ -97,7 +96,7 @@ class DataValidationError(Exception):
 
 
 # ============================================================
-# 4. FONCTION GÉNÉRIQUE DE VALIDATION
+# 4. FONCTION OF VALIDATION
 # ============================================================
 def _validate_dataframe(
     df: pd.DataFrame,
@@ -107,14 +106,8 @@ def _validate_dataframe(
     raise_on_error: bool = True,
 ) -> dict:
     """
-    Valide un DataFrame entier contre un schéma Pydantic.
-
-    Détecte :
-    - dataset vide
-    - colonnes manquantes
-    - colonnes inattendues
-    - valeurs manquantes
-    - lignes invalides (types, catégories, règles métier)
+    Validate a dataframe against a pydantic schema and a set of required columns.
+    Returns a report dictionary with validation results.
     """
     report: dict[str, Any] = {
         "dataset": dataset_name,
@@ -131,42 +124,42 @@ def _validate_dataframe(
         "stats": {"total_rows": 0, "valid_rows": 0, "invalid_rows": 0},
     }
 
-    # ---------- CHECK 1 : dataset vide ----------
+    # ---------- CHECK 1 : dataset empty----------
     if df is None or df.empty:
         report["is_valid"] = False
-        report["issues"]["empty_dataset"].append("Le dataset est vide ou None.")
-        report["summary"] = "❌ Dataset vide."
+        report["issues"]["empty_dataset"].append("Dataset is empty or None")
+        report["summary"] = "❌ Empty Dataset"
         if raise_on_error:
             raise DataValidationError(dataset_name, report)
         return report
 
     report["stats"]["total_rows"] = len(df)
 
-    # ---------- CHECK 2 : colonnes manquantes ----------
+    # ---------- CHECK 2 : missing columns ----------
     actual_cols = set(df.columns)
     missing_cols = required_columns - actual_cols
     if missing_cols:
         report["is_valid"] = False
         report["issues"]["missing_columns"] = sorted(missing_cols)
 
-    # ---------- CHECK 3 : colonnes inattendues ----------
+    # ---------- CHECK 3 : unexpected columns ----------
     unexpected_cols = actual_cols - required_columns
     if unexpected_cols:
         report["is_valid"] = False
         report["issues"]["unexpected_columns"] = sorted(unexpected_cols)
 
-    # Si problèmes de colonnes → on ne peut pas valider les lignes
+    # If there are missing or unexpected columns, we can stop here and return the report
     if missing_cols or unexpected_cols:
         report["summary"] = (
-            f"❌ Problème de colonnes : "
-            f"{len(missing_cols)} manquante(s), "
-            f"{len(unexpected_cols)} inattendue(s)."
+            f"❌ Columns issue : "
+            f"{len(missing_cols)} missing."
+            f"{len(unexpected_cols)} unexpected."
         )
         if raise_on_error:
             raise DataValidationError(dataset_name, report)
         return report
 
-    # ---------- CHECK 4 : valeurs manquantes ----------
+    # ---------- CHECK 4 : missing values ----------
     null_counts = df.isnull().sum()
     for col, n in null_counts.items():
         if n > 0:
@@ -178,7 +171,7 @@ def _validate_dataframe(
     if report["issues"]["missing_values"]:
         report["is_valid"] = False
 
-    # ---------- CHECK 5 : validation ligne par ligne ----------
+    # ---------- CHECK 5 : validation line by line ----------
     valid_rows = []
     for idx, row in df.iterrows():
         try:
@@ -197,7 +190,7 @@ def _validate_dataframe(
     if report["issues"]["invalid_rows"]:
         report["is_valid"] = False
 
-    # ---------- Résumé ----------
+    # ---------- Resume ----------
     n_issues = sum(len(v) for v in report["issues"].values())
     if report["is_valid"]:
         report["summary"] = f"✅ Dataset '{dataset_name}' valide ({len(df)} lignes)."
@@ -215,7 +208,7 @@ def _validate_dataframe(
 
 
 # ============================================================
-# 5. WRAPPERS SPÉCIFIQUES
+# 5. WRAPPERS
 # ============================================================
 def validate_customers(df: pd.DataFrame, raise_on_error: bool = True) -> dict:
     return _validate_dataframe(

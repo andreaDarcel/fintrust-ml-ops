@@ -2,9 +2,9 @@
 
 import pandas as pd             ##the pandas module to transorm csv into tables
 
-customer_df = pd.read_csv('customer.csv')
-dictionary_df = pd.read_csv('data_dictionary.csv')
-transaction_df = pd.read_csv('transaction.csv')
+customer_df = pd.read_csv('../data/raw/customer.csv')
+dictionary_df = pd.read_csv('../data/raw/data_dictionary.csv')
+transaction_df = pd.read_csv('../data/raw/transaction.csv')
 
 print("==== Customer DataFrame Info====")
 print(customer_df.shape)                    ##Give the shape of the dataframe

@@ -1,0 +1,27 @@
+
+# ---------- 1.  DATA ----------
+data/raw/*
+data/processed/*
+!data/**/README.md
+
+# ---------- 2. MODELS ----------
+models/*
+!models/config.json
+!models/README.md
+
+# ---------- 3. VIRTUAL ENVIRONMENTS ----------
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ---------- 4. CACHE PYTHON ----------
+__pycache__/
+.Python
+build/
+
+
+# ---------- 5. TESTS----------
+.pytest_cache/
+

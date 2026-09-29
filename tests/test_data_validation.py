@@ -9,33 +9,44 @@ from src.data_validation import (
 )
 
 
-# --- Fixtures : datasets valides minimaux ---
+# --- Fixtures : minimal valid datasets ---
 @pytest.fixture
 def valid_customers() -> pd.DataFrame:
     return pd.DataFrame([{
-        "customer_id": "C0001",
+        "customer_id": "FT-C00001",
+        "customer_name": "John Doe",
         "age": 30,
         "gender": "M",
-        "country": "France",
-        "signup_date": datetime(2023, 1, 1),
-        "income": 45000.0,
+        "city": "Kano",
+        "customer_segment": "Premium",
+        "account_type": "Savings",
+        "tenure_months": 12,
+        "monthly_income_band": "Below 100k",
+        "digital_engagement_score": 50.0,
+        "preferred_channel": "Mobile App",
+        "account_status": "Active",
     }])
 
 
 @pytest.fixture
 def valid_transactions() -> pd.DataFrame:
     return pd.DataFrame([{
-        "transaction_id": "T00001",
-        "customer_id": "C0001",
-        "amount": 100.0,
-        "currency": "EUR",
+        "transaction_id": "FT-T000001",
+        "customer_id": "FT-C00001",
+        "channel": "Mobile App",
+        "Device_Type": "Mobile",
+        "Location": "Lagos",
+        "amount_ngn": 1000.0,
         "transaction_type": "transfer",
-        "timestamp": datetime(2024, 1, 1),
+        "transaction_date": datetime(2024, 1, 1),
+        "international_transaction": "No",
+        "transaction_status": "success",
+        "risk_review_flag": "No",
     }])
 
 
 # ============================================================
-# CAS 1 : DATASET VIDE
+# CAS 1 : DATASET EMPTY
 # ============================================================
 def test_empty_transactions_rejected():
     with pytest.raises(DataValidationError) as exc:
@@ -44,17 +55,17 @@ def test_empty_transactions_rejected():
 
 
 # ============================================================
-# CAS 2 : COLONNES MANQUANTES
+# CAS 2 : MISSED COLUMNS
 # ============================================================
 def test_missing_column_transactions(valid_transactions):
-    df = valid_transactions.drop(columns=["currency"])
+    df = valid_transactions.drop(columns=["channel"])
     with pytest.raises(DataValidationError) as exc:
         validate_transactions(df)
-    assert "currency" in exc.value.report["issues"]["missing_columns"]
+    assert "channel" in exc.value.report["issues"]["missing_columns"]
 
 
 # ============================================================
-# CAS 3 : COLONNES INATTENDUES
+# CAS 3 : UNEXPECTED COLUMNS
 # ============================================================
 def test_unexpected_column_transactions(valid_transactions):
     df = valid_transactions.copy()
@@ -65,35 +76,35 @@ def test_unexpected_column_transactions(valid_transactions):
 
 
 # ============================================================
-# CAS 4 : VALEURS MANQUANTES
+# CAS 4 : MISSED VALUES
 # ============================================================
 def test_missing_value_in_amount(valid_transactions):
     df = valid_transactions.copy()
-    df.loc[0, "amount"] = None
+    df.loc[0, "amount_ngn"] = None
     with pytest.raises(DataValidationError) as exc:
         validate_transactions(df)
     cols = [i["column"] for i in exc.value.report["issues"]["missing_values"]]
-    assert "amount" in cols
+    assert "amount_ngn" in cols
 
 
 # ============================================================
-# CAS 5 : TYPES INCORRECTS
+# CAS 5 : INCORRECT TYPES
 # ============================================================
 def test_wrong_type_amount(valid_transactions):
     df = valid_transactions.copy()
-    df["amount"] = "pas_un_nombre"
+    df["amount_ngn"] = "pas_un_nombre"
     with pytest.raises(DataValidationError) as exc:
         validate_transactions(df)
     assert len(exc.value.report["issues"]["invalid_rows"]) == 1
 
 
 # ============================================================
-# CAS 6 : CATÉGORIES INATTENDUES
+# CAS 6 : UNEXPECTED CATEGORIES
 # ============================================================
-@pytest.mark.parametrize("bad_currency", ["XYZ", "eu", "EURO", ""])
-def test_invalid_currency(valid_transactions, bad_currency):
+@pytest.mark.parametrize("bad_channel", ["ATC","Mac", ""])
+def test_invalid_channel(valid_transactions, bad_channel):
     df = valid_transactions.copy()
-    df.loc[0, "currency"] = bad_currency
+    df.loc[0, "channel"] = bad_channel
     with pytest.raises(DataValidationError):
         validate_transactions(df)
 
@@ -106,11 +117,11 @@ def test_invalid_gender(valid_customers):
 
 
 # ============================================================
-# CAS 7 : ENTRÉES INVALIDES (règles métier)
+# CAS 7 :INVALIDS ENTER
 # ============================================================
 def test_negative_amount(valid_transactions):
     df = valid_transactions.copy()
-    df.loc[0, "amount"] = -10
+    df.loc[0, "amount_ngn"] = -1000.0
     with pytest.raises(DataValidationError):
         validate_transactions(df)
 
@@ -130,7 +141,7 @@ def test_future_timestamp(valid_transactions):
 
 
 # ============================================================
-# CAS 8 : DATASET VALIDE → PASSE
+# CAS 8 : VALID DATASET → PASS
 # ============================================================
 def test_valid_transactions_pass(valid_transactions):
     report = validate_transactions(valid_transactions, raise_on_error=False)
@@ -144,7 +155,7 @@ def test_valid_customers_pass(valid_customers):
 
 
 # ============================================================
-# CAS 9 : MODE TOLÉRANT → récupère les lignes valides
+# CAS 9 : TOLERANT MODE → take valid lines
 # ============================================================
 def test_tolerant_mode_keeps_valid_rows(valid_transactions):
     df = pd.concat([valid_transactions, valid_transactions], ignore_index=True)
