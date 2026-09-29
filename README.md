@@ -12,8 +12,13 @@ fintrust-ml-ops/
 |   |--raw/
 |       |--customer.csv
 |       |--data_dictionary.csv
-|       |--transaction.csv
-|       |__dataeplore.py
+|       |__transaction.csv
+| 
+|--models/
+|
+|--notebooks/
+|   |__dataexplore.py
+|      
 ├── src/
 │   ├── data_validation.py   # Pydantic data schemas & validation rules
 │   ├── preprocessing.py     # Scikit-learn feature transformers
@@ -21,6 +26,9 @@ fintrust-ml-ops/
 │   └── api/
 │       └── main.py          # FastAPI REST service
 ├── tests/
+|   |--__init__.py
+|   |--test_api.py
+|   |--test_data_validation.py
 │   └── test_workflow.py     # Pytest test suite
 ├── requirements.txt         # Dependencies
 └── README.md
