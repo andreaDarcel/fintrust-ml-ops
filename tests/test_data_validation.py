@@ -1,7 +1,7 @@
 # tests/test_data_validation.py
-import pandas as pd
-import pytest
 from datetime import datetime
+import pandas as pd
+import pytest  # type: ignore[import-not-found]
 
 from src.data_validation import (
     validate_customers, validate_transactions,
