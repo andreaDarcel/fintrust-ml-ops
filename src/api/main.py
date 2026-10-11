@@ -20,8 +20,9 @@ state: dict = {"pipeline": None}
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
-    """Charge le pipeline UNE FOIS au démarrage."""
+async def lifespan(application: FastAPI):
+    """Load the prediction pipeline once when the API starts."""
+    logger.debug("Starting lifespan for %s", application.title)
     try:
         state["pipeline"] = FinTrustPipeline()
         logger.info("Pipeline chargé ✅")
@@ -41,7 +42,7 @@ app = FastAPI(
 
 
 # ============================================================
-# SCHÉMAS DE RÉPONSE
+# RESPONSE SCHEMAS
 # ============================================================
 class HealthResponse(BaseModel):
     status: str
@@ -72,7 +73,7 @@ def health():
 
 @app.get("/info")
 def info():
-    """Métadonnées du modèle."""
+    """Return the model metadata."""
     if not config.MODEL_CONFIG_FILE.exists():
         raise HTTPException(404, "Config modèle absente")
     return json.loads(config.MODEL_CONFIG_FILE.read_text(encoding="utf-8"))
@@ -80,7 +81,7 @@ def info():
 
 @app.post("/predict", response_model=PredictionResponse)
 def predict(transaction: TransactionRow):
-    """Prédiction pour UNE transaction."""
+    """Return a review prediction for one transaction."""
     if state["pipeline"] is None:
         raise HTTPException(503, "Modèle non chargé")
     try:

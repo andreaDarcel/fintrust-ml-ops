@@ -20,11 +20,11 @@ TRANSACTION_FILE = DATA_RAW / "transaction.csv"
 DATA_DICTIONARY_FILE = DATA_RAW / "data_dictionary.csv"
 
 
-## Reproducubility
+# Reproducibility
 RANDOM_SEED = 42
 TEST_SIZE = 0.2
 
-## expected columns in the data files
+# Expected columns in the data files
 CUSTOMER_COLUMNS = {
     "customer_id", "customer_name", "age", "gender", "city",
     "customer_segment", "account_type", "tenure_months",
@@ -39,7 +39,7 @@ TRANSACTION_COLUMNS ={
     "risk_review_flag",
 }
 
-# --- customer table rules ---
+# --- Customer data rules ---
 
 VALID_PREFERRED_CHANNELS = {"Mobile App", "USSD", "Web"}
 VALID_GENDERS = {"Male", "Female", "Prefer not to say", "Other"}
@@ -62,7 +62,7 @@ MIN_AGE = 18
 MAX_AGE = 99
 
 
-# --- transaction table rules ---
+# --- Transaction data rules ---
 
 VALID_TRANSACTION_TYPES = {
     "Card Purchase", "Airtime/Data", "Transfer", "Bill Payment",
@@ -75,9 +75,9 @@ VALID_TRANSACTION_STATUS = {"Failed", "Pending", "Reversed", "Successful"}
 VALID_RISK_REVIEW_FLAG = {"Yes", "No"}
 
 TRANSACTION_ID_PATTERN = r"^FT-T\d{6}$"
-TRANSACTION_DATE_FORMAT = "%Y/%m/%d %H:%M"  ##Example : 2024/01/01 12:00
+TRANSACTION_DATE_FORMAT = "%Y/%m/%d %H:%M"  # Example: 2024/01/01 12:00
 
-# --- gestion of missing values ---
+# --- Missing-value handling ---
 MISSING_VALUES_POLICY = "strict"
 LOG_BUT_CONTINUE = "warn"
 DROP_ROWS = "drop"

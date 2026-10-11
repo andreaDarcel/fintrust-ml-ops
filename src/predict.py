@@ -1,5 +1,5 @@
 # src/predict.py
-"""Script de prédiction CLI : python -m src.predict"""
+"""Command-line prediction script: ``python -m src.predict``."""
 import json
 import sys
 

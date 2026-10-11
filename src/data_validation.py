@@ -1,6 +1,6 @@
 # src/data_validation.py
 """
-Validation data Fintrust
+FinTrust data validation.
 
 - CustomerRow       : one row of the customers file
 - TransactionRow    : one row of the transactions file
@@ -20,7 +20,7 @@ from src import config
 
 
 # ============================================================
-# 1. CLIENT SCHEMA
+# 1. CUSTOMER SCHEMA
 # ============================================================
 class CustomerRow(BaseModel):
     """Validated customer record from the customers dataset."""
@@ -132,7 +132,7 @@ class TransactionRow(BaseModel):
 
 
 # ============================================================
-# 3. PERSONNALIZED ERROR
+# 3. CUSTOM VALIDATION ERROR
 # ============================================================
 class DataValidationError(Exception):
     """Raised when a dataset fails validation. Contains a detailed report."""
@@ -143,7 +143,7 @@ class DataValidationError(Exception):
 
 
 # ============================================================
-# 4. FONCTION OF VALIDATION
+# 4. DATAFRAME VALIDATION
 # ============================================================
 def _normalize_dataframe(df: pd.DataFrame | None) -> pd.DataFrame | None:
     if df is None:
@@ -193,7 +193,6 @@ def _column_issues(
 
 def _missing_value_issues(
     df: pd.DataFrame,
-    optional_columns: set[str],
 ) -> list[dict[str, Any]]:
     issues = []
     for column, count in df.isna().sum().items():
@@ -203,7 +202,7 @@ def _missing_value_issues(
                 "count": int(count),
                 "percentage": round(100 * count / len(df), 2),
             })
-    return [issue for issue in issues if issue["column"] not in optional_columns]
+    return issues
 
 
 def _validate_rows(
@@ -259,13 +258,17 @@ def _validate_dataframe(
         report["summary"] = f"Columns issue: {len(missing)} missing, {len(unexpected)} unexpected."
         return _finish_report(report, dataset_name, raise_on_error)
 
-    report["issues"]["missing_values"] = _missing_value_issues(df, optional_columns)
+    missing_values = _missing_value_issues(df)
+    report["issues"]["missing_values"] = missing_values
     valid_rows, invalid_rows = _validate_rows(df, schema)
     report["valid_rows"] = valid_rows
     report["issues"]["invalid_rows"] = invalid_rows
     report["stats"]["valid_rows"] = len(valid_rows)
     report["stats"]["invalid_rows"] = len(invalid_rows)
-    report["is_valid"] = not report["issues"]["missing_values"] and not invalid_rows
+    has_required_missing_values = any(
+        issue["column"] not in optional_columns for issue in missing_values
+    )
+    report["is_valid"] = not has_required_missing_values and not invalid_rows
 
     if report["is_valid"]:
         report["summary"] = f"Dataset '{dataset_name}' valide ({len(df)} lignes)."
@@ -279,7 +282,7 @@ def _validate_dataframe(
 
 
 # ============================================================
-# 5. WRAPPERS
+# 5. VALIDATION WRAPPERS
 # ============================================================
 def validate_customers(df: pd.DataFrame, raise_on_error: bool = True) -> dict:
     """Validate a customers dataframe against the expected schema.

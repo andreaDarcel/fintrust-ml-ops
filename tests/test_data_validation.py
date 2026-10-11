@@ -9,7 +9,7 @@ from src.data_validation import (
 )
 
 
-# --- Fixtures : minimal valid datasets ---
+# --- Fixtures: minimal valid datasets ---
 @pytest.fixture
 def valid_customers() -> pd.DataFrame:
     return pd.DataFrame([{
@@ -46,7 +46,7 @@ def valid_transactions() -> pd.DataFrame:
 
 
 # ============================================================
-# CAS 1 : DATASET EMPTY
+# CASE 1: EMPTY DATASET
 # ============================================================
 def test_empty_transactions_rejected():
     with pytest.raises(DataValidationError) as exc:
@@ -55,7 +55,7 @@ def test_empty_transactions_rejected():
 
 
 # ============================================================
-# CAS 2 : MISSED COLUMNS
+# CASE 2: MISSING COLUMNS
 # ============================================================
 def test_missing_column_transactions(valid_transactions):
     df = valid_transactions.drop(columns=["channel"])
@@ -65,7 +65,7 @@ def test_missing_column_transactions(valid_transactions):
 
 
 # ============================================================
-# CAS 3 : UNEXPECTED COLUMNS
+# CASE 3: UNEXPECTED COLUMNS
 # ============================================================
 def test_unexpected_column_transactions(valid_transactions):
     df = valid_transactions.copy()
@@ -76,7 +76,7 @@ def test_unexpected_column_transactions(valid_transactions):
 
 
 # ============================================================
-# CAS 4 : MISSED VALUES
+# CASE 4: MISSING VALUES
 # ============================================================
 def test_missing_value_in_amount(valid_transactions):
     df = valid_transactions.copy()
@@ -88,7 +88,7 @@ def test_missing_value_in_amount(valid_transactions):
 
 
 # ============================================================
-# CAS 5 : INCORRECT TYPES
+# CASE 5: INVALID TYPES
 # ============================================================
 def test_wrong_type_amount(valid_transactions):
     df = valid_transactions.copy()
@@ -99,7 +99,7 @@ def test_wrong_type_amount(valid_transactions):
 
 
 # ============================================================
-# CAS 6 : UNEXPECTED CATEGORIES
+# CASE 6: UNEXPECTED CATEGORIES
 # ============================================================
 @pytest.mark.parametrize("bad_channel", ["ATC","Mac", ""])
 def test_invalid_channel(valid_transactions, bad_channel):
@@ -117,7 +117,7 @@ def test_invalid_gender(valid_customers):
 
 
 # ============================================================
-# CAS 7 :INVALIDS ENTER
+# CASE 7: INVALID INPUTS
 # ============================================================
 def test_negative_amount(valid_transactions):
     df = valid_transactions.copy()
@@ -141,7 +141,7 @@ def test_future_timestamp(valid_transactions):
 
 
 # ============================================================
-# CAS 8 : VALID DATASET → PASS
+# CASE 8: VALID DATASET
 # ============================================================
 def test_valid_transactions_pass(valid_transactions):
     report = validate_transactions(valid_transactions, raise_on_error=False)
@@ -155,7 +155,7 @@ def test_valid_customers_pass(valid_customers):
 
 
 # ============================================================
-# CAS 9 : TOLERANT MODE → take valid lines
+# CASE 9: TOLERANT MODE RETAINS VALID ROWS
 # ============================================================
 def test_tolerant_mode_keeps_valid_rows(valid_transactions):
     df = pd.concat([valid_transactions, valid_transactions], ignore_index=True)
@@ -163,3 +163,15 @@ def test_tolerant_mode_keeps_valid_rows(valid_transactions):
     report = validate_transactions(df, raise_on_error=False)
     assert report["is_valid"] is False
     assert len(report["valid_rows"]) == 1
+
+
+def test_optional_missing_values_are_reported(valid_transactions):
+    df = valid_transactions.copy()
+    df.loc[0, "location"] = None
+
+    report = validate_transactions(df, raise_on_error=False)
+
+    assert report["is_valid"] is True
+    assert report["issues"]["missing_values"] == [
+        {"column": "location", "count": 1, "percentage": 100.0}
+    ]

@@ -1,4 +1,4 @@
-"""FinTrust ML Operations - principal package"""
+"""Main package for FinTrust ML Operations."""
 
 __version__ = "0.1.0"
 __author__ = "Fintrust ML Team"

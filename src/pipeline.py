@@ -1,8 +1,8 @@
 # src/pipeline.py
 """
-Pipeline unifié FinTrust.
+Unified FinTrust prediction pipeline.
 
-Utilisation :
+Usage:
     pipeline = FinTrustPipeline()
     result = pipeline.predict_one({...})
     results = pipeline.predict_batch(df)
@@ -24,29 +24,29 @@ logger = logging.getLogger(__name__)
 
 
 class FinTrustPipeline:
-    """Pipeline de prédiction intégré de bout en bout."""
+    """End-to-end transaction review pipeline."""
 
     def __init__(self, model_path=None):
         self.model: Pipeline = load_model(model_path)
         logger.info("Pipeline initialisé avec %s", config.MODEL_FILE)
 
-    # ---------- 1. PRÉDICTION UNIQUE ----------
+    # ---------- 1. SINGLE-TRANSACTION PREDICTION ----------
     def predict_one(self, row: dict[str, Any]) -> dict[str, Any]:
-        """Input dict → validation → features → prédiction → dict."""
-        # 1. Validation (Pydantic)
+        """Validate one transaction and return its review prediction."""
+        # 1. Validate the transaction with Pydantic.
         validated = TransactionRow(**row)
 
-        # 2. DataFrame d'une ligne
+        # 2. Create a single-row DataFrame.
         df = pd.DataFrame([validated.model_dump()])
 
-        # 3. Features
+        # 3. Build model features.
         df = build_features(df)
 
-        # 4. Prédiction
+        # 4. Predict the review status.
         proba = float(self.model.predict_proba(df)[0, 1])
         prediction = int(proba >= 0.5)
 
-        # 5. Sortie structurée
+        # 5. Build the structured response.
         return {
             "transaction_id": validated.transaction_id,
             "prediction": prediction,
@@ -55,11 +55,10 @@ class FinTrustPipeline:
             "model_version": config.MODEL_VERSION,
         }
 
-    # ---------- 2. PRÉDICTION EN LOT ----------
+    # ---------- 2. BATCH PREDICTION ----------
     def predict_batch(self, df: pd.DataFrame) -> dict[str, Any]:
         """
-        Input DataFrame → validation → features → prédictions → dict.
-        Retourne les prédictions + un rapport sur les lignes rejetées.
+        Validate a DataFrame, predict valid rows, and report rejected rows.
         """
         report = validate_transactions(df, raise_on_error=False)
         valid_df = report["valid_rows"]
@@ -76,10 +75,10 @@ class FinTrustPipeline:
                 },
             }
 
-        # Features
+        # Build features for valid transactions.
         features_df = build_features(valid_df)
 
-        # Prédictions vectorisées
+        # Predict all valid rows in one batch.
         probas = self.model.predict_proba(features_df)[:, 1]
         preds = (probas >= 0.5).astype(int)
 
