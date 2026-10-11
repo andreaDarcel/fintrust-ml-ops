@@ -1,1 +1,1 @@
-"""Fintrust test suite package"""
+"""FinTrust test suite package."""

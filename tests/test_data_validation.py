@@ -16,7 +16,7 @@ def valid_customers() -> pd.DataFrame:
         "customer_id": "FT-C00001",
         "customer_name": "John Doe",
         "age": 30,
-        "gender": "M",
+        "gender": "Male",
         "city": "Kano",
         "customer_segment": "Premium",
         "account_type": "Savings",
@@ -34,13 +34,13 @@ def valid_transactions() -> pd.DataFrame:
         "transaction_id": "FT-T000001",
         "customer_id": "FT-C00001",
         "channel": "Mobile App",
-        "Device_Type": "Mobile",
-        "Location": "Lagos",
+        "device_type": "Android",
+        "location": "Lagos",
         "amount_ngn": 1000.0,
-        "transaction_type": "transfer",
+        "transaction_type": "Transfer",
         "transaction_date": datetime(2024, 1, 1),
         "international_transaction": "No",
-        "transaction_status": "success",
+        "transaction_status": "Successful",
         "risk_review_flag": "No",
     }])
 
@@ -135,7 +135,7 @@ def test_age_out_of_range(valid_customers):
 
 def test_future_timestamp(valid_transactions):
     df = valid_transactions.copy()
-    df.loc[0, "timestamp"] = datetime(2099, 1, 1)
+    df.loc[0, "transaction_date"] = datetime(2099, 1, 1)
     with pytest.raises(DataValidationError):
         validate_transactions(df)
 
@@ -159,7 +159,7 @@ def test_valid_customers_pass(valid_customers):
 # ============================================================
 def test_tolerant_mode_keeps_valid_rows(valid_transactions):
     df = pd.concat([valid_transactions, valid_transactions], ignore_index=True)
-    df.loc[1, "amount"] = -999  # 2ème ligne invalide
+    df.loc[1, "amount_ngn"] = -999
     report = validate_transactions(df, raise_on_error=False)
     assert report["is_valid"] is False
     assert len(report["valid_rows"]) == 1

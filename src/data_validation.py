@@ -24,9 +24,12 @@ from src import config
 # ============================================================
 class CustomerRow(BaseModel):
     """Validated customer record from the customers dataset."""
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)            ##saying that we don't want any extra fields and we want to strip whitespace from strings
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
     customer_id: str = Field(..., pattern=config.CUSTOMER_ID_PATTERN)
-    customer_name: str = Field(..., min_length=2, max_length=100)  ##the customer name must be between 2 and 100 characters
+    customer_name: str = Field(..., min_length=2, max_length=100)
     age: int = Field(..., ge=config.MIN_AGE, le=config.MAX_AGE)
     gender: str
     city: str = Field(..., min_length=2, max_length=56)
@@ -79,12 +82,12 @@ class TransactionRow(BaseModel):
     amount_ngn: float = Field(..., ge=100.0)
     transaction_type: str
     channel: str
-    device_type: str
-    location: str = Field(..., min_length=2, max_length=56)
+    device_type: str | None = None
+    location: str | None = Field(default=None, min_length=2, max_length=56)
     transaction_date: datetime
     international_transaction: str
     transaction_status: str
-    risk_review_flag: str
+    risk_review_flag: str | None = None
 
     @field_validator("transaction_type")
     @classmethod
@@ -102,7 +105,9 @@ class TransactionRow(BaseModel):
         "transaction_status", "risk_review_flag",
     )
     @classmethod
-    def transaction_categories_must_be_valid(cls, value: str, info) -> str:
+    def transaction_categories_must_be_valid(cls, value: str | None, info) -> str | None:
+        if value is None:
+            return value
         allowed_values = {
             "channel": config.VALID_CHANNEL,
             "device_type": config.VALID_DEVICE_TYPE,
@@ -119,6 +124,8 @@ class TransactionRow(BaseModel):
     @classmethod
     def timestamp_not_in_future(cls, v: datetime) -> datetime:
         """Ensure the transaction timestamp is not set in the future."""
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
         if v > datetime.now(timezone.utc):
             raise ValueError("timestamp ne peut pas être dans le futur")
         return v
@@ -138,18 +145,21 @@ class DataValidationError(Exception):
 # ============================================================
 # 4. FONCTION OF VALIDATION
 # ============================================================
-def _validate_dataframe(
-    df: pd.DataFrame,
-    schema: type[BaseModel],
-    required_columns: set[str],
-    dataset_name: str,
-    raise_on_error: bool = True,
-) -> dict:
-    """
-    Validate a dataframe against a pydantic schema and a set of required columns.
-    Returns a report dictionary with validation results.
-    """
-    report: dict[str, Any] = {
+def _normalize_dataframe(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    if df is None:
+        return None
+    normalized = df.rename(columns=lambda column: str(column).strip().lower())
+    normalized = normalized.rename(columns={"transaction_datetime": "transaction_date"})
+    if "transaction_date" in normalized.columns:
+        normalized = normalized.copy()
+        normalized["transaction_date"] = pd.to_datetime(
+            normalized["transaction_date"], format="mixed", errors="coerce", utc=True
+        )
+    return normalized.astype(object).where(pd.notna(normalized), None)
+
+
+def _new_report(dataset_name: str) -> dict[str, Any]:
+    return {
         "dataset": dataset_name,
         "is_valid": True,
         "summary": "",
@@ -164,87 +174,108 @@ def _validate_dataframe(
         "stats": {"total_rows": 0, "valid_rows": 0, "invalid_rows": 0},
     }
 
-    # ---------- CHECK 1 : dataset empty----------
+
+def _column_issues(
+    df: pd.DataFrame,
+    schema: type[BaseModel],
+) -> tuple[list[str], list[str], set[str]]:
+    schema_columns = set(schema.model_fields)
+    required_columns = {
+        name for name, field in schema.model_fields.items() if field.is_required()
+    }
+    actual_columns = set(df.columns)
+    return (
+        sorted(required_columns - actual_columns),
+        sorted(actual_columns - schema_columns),
+        schema_columns - required_columns,
+    )
+
+
+def _missing_value_issues(
+    df: pd.DataFrame,
+    optional_columns: set[str],
+) -> list[dict[str, Any]]:
+    issues = []
+    for column, count in df.isna().sum().items():
+        if count:
+            issues.append({
+                "column": column,
+                "count": int(count),
+                "percentage": round(100 * count / len(df), 2),
+            })
+    return [issue for issue in issues if issue["column"] not in optional_columns]
+
+
+def _validate_rows(
+    df: pd.DataFrame,
+    schema: type[BaseModel],
+) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+    valid_rows = []
+    invalid_rows = []
+    for index, row in df.iterrows():
+        try:
+            validated_row = schema(**row.to_dict())
+            valid_rows.append(pd.Series(validated_row.model_dump()))
+        except ValidationError as error:
+            invalid_rows.append({
+                "row_index": int(index),
+                "error": str(error).split("\n", maxsplit=1)[0],
+            })
+    return pd.DataFrame(valid_rows), invalid_rows
+
+
+def _finish_report(
+    report: dict[str, Any],
+    dataset_name: str,
+    raise_on_error: bool,
+) -> dict[str, Any]:
+    if raise_on_error and not report["is_valid"]:
+        raise DataValidationError(dataset_name, report)
+    return report
+
+
+def _validate_dataframe(
+    df: pd.DataFrame | None,
+    schema: type[BaseModel],
+    dataset_name: str,
+    raise_on_error: bool = True,
+) -> dict[str, Any]:
+    """Validate columns and rows, retaining valid records in tolerant mode."""
+    df = _normalize_dataframe(df)
+    report = _new_report(dataset_name)
+
     if df is None or df.empty:
         report["is_valid"] = False
         report["issues"]["empty_dataset"].append("Dataset is empty or None")
-        report["summary"] = "❌ Empty Dataset"
-        if raise_on_error:
-            raise DataValidationError(dataset_name, report)
-        return report
+        report["summary"] = "Empty dataset"
+        return _finish_report(report, dataset_name, raise_on_error)
 
     report["stats"]["total_rows"] = len(df)
-
-    # ---------- CHECK 2 : missing columns ----------
-    actual_cols = set(df.columns)
-    missing_cols = required_columns - actual_cols
-    if missing_cols:
+    missing, unexpected, optional_columns = _column_issues(df, schema)
+    report["issues"]["missing_columns"] = missing
+    report["issues"]["unexpected_columns"] = unexpected
+    if missing or unexpected:
         report["is_valid"] = False
-        report["issues"]["missing_columns"] = sorted(missing_cols)
+        report["summary"] = f"Columns issue: {len(missing)} missing, {len(unexpected)} unexpected."
+        return _finish_report(report, dataset_name, raise_on_error)
 
-    # ---------- CHECK 3 : unexpected columns ----------
-    unexpected_cols = actual_cols - required_columns
-    if unexpected_cols:
-        report["is_valid"] = False
-        report["issues"]["unexpected_columns"] = sorted(unexpected_cols)
-
-    # If there are missing or unexpected columns, we can stop here and return the report
-    if missing_cols or unexpected_cols:
-        report["summary"] = (
-            f"❌ Columns issue : "
-            f"{len(missing_cols)} missing."
-            f"{len(unexpected_cols)} unexpected."
-        )
-        if raise_on_error:
-            raise DataValidationError(dataset_name, report)
-        return report
-
-    # ---------- CHECK 4 : missing values ----------
-    null_counts = df.isnull().sum()
-    for col, n in null_counts.items():
-        if n > 0:
-            report["issues"]["missing_values"].append({
-                "column": col,
-                "count": int(n),
-                "percentage": round(100 * n / len(df), 2),
-            })
-    if report["issues"]["missing_values"]:
-        report["is_valid"] = False
-
-    # ---------- CHECK 5 : validation line by line ----------
-    valid_rows = []
-    for idx, row in df.iterrows():
-        try:
-            schema(**row.to_dict())
-            valid_rows.append(row)
-        except ValidationError as e:
-            report["issues"]["invalid_rows"].append({
-                "row_index": int(idx),
-                "error": str(e).split("\n", maxsplit=1)[0],
-            })
-
-    report["valid_rows"] = pd.DataFrame(valid_rows)
+    report["issues"]["missing_values"] = _missing_value_issues(df, optional_columns)
+    valid_rows, invalid_rows = _validate_rows(df, schema)
+    report["valid_rows"] = valid_rows
+    report["issues"]["invalid_rows"] = invalid_rows
     report["stats"]["valid_rows"] = len(valid_rows)
-    report["stats"]["invalid_rows"] = len(report["issues"]["invalid_rows"])
+    report["stats"]["invalid_rows"] = len(invalid_rows)
+    report["is_valid"] = not report["issues"]["missing_values"] and not invalid_rows
 
-    if report["issues"]["invalid_rows"]:
-        report["is_valid"] = False
-
-    # ---------- Resume ----------
-    n_issues = sum(len(v) for v in report["issues"].values())
     if report["is_valid"]:
-        report["summary"] = f"✅ Dataset '{dataset_name}' valide ({len(df)} lignes)."
+        report["summary"] = f"Dataset '{dataset_name}' valide ({len(df)} lignes)."
     else:
+        issue_count = sum(len(items) for items in report["issues"].values())
         report["summary"] = (
-            f"❌ Dataset '{dataset_name}' invalide : "
-            f"{n_issues} problème(s) sur {len(df)} lignes "
-            f"({report['stats']['invalid_rows']} lignes rejetées)."
+            f"Dataset '{dataset_name}' invalide : {issue_count} problème(s) "
+            f"sur {len(df)} lignes ({len(invalid_rows)} lignes rejetées)."
         )
-
-    if raise_on_error and not report["is_valid"]:
-        raise DataValidationError(dataset_name, report)
-
-    return report
+    return _finish_report(report, dataset_name, raise_on_error)
 
 
 # ============================================================
@@ -261,8 +292,7 @@ def validate_customers(df: pd.DataFrame, raise_on_error: bool = True) -> dict:
         A report dictionary with validation status, issues, and valid rows.
     """
     return _validate_dataframe(
-        df, CustomerRow, config.CUSTOMER_COLUMNS,
-        "customers", raise_on_error,
+        df, CustomerRow, "customers", raise_on_error,
     )
 
 
@@ -277,6 +307,5 @@ def validate_transactions(df: pd.DataFrame, raise_on_error: bool = True) -> dict
         A report dictionary with validation status, issues, and valid rows.
     """
     return _validate_dataframe(
-        df, TransactionRow, config.TRANSACTION_COLUMNS,
-        "transactions", raise_on_error,
+        df, TransactionRow, "transactions", raise_on_error,
     )

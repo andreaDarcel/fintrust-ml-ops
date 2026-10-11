@@ -1,4 +1,4 @@
-# scripts/audit_data.py
+"""Audit raw customer and transaction datasets."""
 import pandas as pd
 from src.config import CUSTOMER_FILE, TRANSACTION_FILE
 

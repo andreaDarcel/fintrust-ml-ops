@@ -1,0 +1,12 @@
+
+{
+    "model_name": "fintrust_fraud",
+    "version": "1.0.0",
+    "algorithm": "",
+    "trained_at": "",
+    "hyperparameters": {},
+    "features": [],
+    "target": "",
+    "training_data": {},
+    "metrics": {}
+}

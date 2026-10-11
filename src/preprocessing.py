@@ -1,83 +1,69 @@
-# src/preprocessing.py
-import pandas as pd
-from src import config
+"""Load validated datasets and create consistent model features."""
+
+import json
+import logging
 from datetime import datetime, timezone
-from src.data_validation import validate_customers, validate_transactions, DataValidationError
+from pathlib import Path
 
-def missing_values_handling(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
-    """Handle missing values in the dataset."""
-    if dataset_name == "customers":
-        # For customers, we can drop rows with missing critical values
-        critical_columns = ["customer_id", "customer_name", "age", "gender"]
-        df = df.dropna(subset=critical_columns)
-    elif dataset_name == "transactions":
-        # For transactions, we can fill missing values with defaults or drop
-        df["amount_ngn"] = df["amount_ngn"].fillna(0)  # Fill missing amounts with 0
-        df = df.dropna(subset=["transaction_id", "customer_id"])  # Drop rows with missing IDs
-    return df
+import pandas as pd
 
-def categorical_encoding(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
-    """Encode categorical variables in the dataset."""
-    if dataset_name == "customers":
-        df["gender"] = df["gender"].map({"Male": 1, "Female": 0, "Other": -1})
-        df = pd.get_dummies(df, columns=["customer_segment", "account_type", "preferred_channel"], drop_first=True)
-    elif dataset_name == "transactions":
-        df = pd.get_dummies(df, columns=["transaction_type", "channel", "device_type", "location"], drop_first=True)
-    return df
+from src import config
+from src.data_validation import (
+    DataValidationError,
+    validate_customers,
+    validate_transactions,
+)
 
-def numerical_processing(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
-    """Process numerical variables in the dataset."""
-    if dataset_name == "customers":
-        # Normalize age and digital engagement score
-        df["age"] = (df["age"] - df["age"].mean()) / df["age"].std()
-        df["digital_engagement_score"] = (df["digital_engagement_score"] - df["digital_engagement_score"].mean()) / df["digital_engagement_score"].std()
-    elif dataset_name == "transactions":
-        # Normalize amount
-        df["amount_ngn"] = (df["amount_ngn"] - df["amount_ngn"].mean()) / df["amount_ngn"].std()
-    return df
+logger = logging.getLogger(__name__)
 
-def feature_preparation(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
-    """Prepare features for modeling."""
-    df = missing_values_handling(df, dataset_name)
-    df = categorical_encoding(df, dataset_name)
-    df = numerical_processing(df, dataset_name)
-    return df
 
-def load_customers(path=None) -> pd.DataFrame:
-    path = path or config.CUSTOMER_FILE
-    df = pd.read_csv(path)
+def build_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Create model inputs without identifiers or target columns."""
+    features = df.rename(columns=lambda column: str(column).strip().lower())
+    features = features.rename(columns={"transaction_datetime": "transaction_date"})
+    features = features.copy()
+
+    if "transaction_date" in features.columns:
+        transaction_date = pd.to_datetime(
+            features.pop("transaction_date"), format="mixed", errors="coerce", utc=True
+        )
+        features["transaction_hour"] = transaction_date.dt.hour
+        features["transaction_day_of_week"] = transaction_date.dt.dayofweek
+        features["transaction_is_weekend"] = transaction_date.dt.dayofweek.isin([5, 6])
+
+    return features.drop(
+        columns=[
+            "transaction_id",
+            "customer_id",
+            "risk_review_flag",
+            "is_fraud",
+        ],
+        errors="ignore",
+    )
+
+
+def load_customers(path: str | Path | None = None) -> pd.DataFrame:
+    """Load and validate the customer CSV."""
+    return _load_dataset(path or config.CUSTOMER_FILE, validate_customers)
+
+
+def load_transactions(path: str | Path | None = None) -> pd.DataFrame:
+    """Load and validate the transaction CSV."""
+    return _load_dataset(path or config.TRANSACTION_FILE, validate_transactions)
+
+
+def _load_dataset(path: str | Path, validator) -> pd.DataFrame:
     try:
-        report = validate_customers(df, raise_on_error=True)
+        report = validator(pd.read_csv(path), raise_on_error=True)
         return report["valid_rows"]
-    except DataValidationError as e:
-        # LOG in production
-        _log_validation_failure(e)
-        raise
-
-
-def load_transactions(path=None) -> pd.DataFrame:
-    path = path or config.TRANSACTION_FILE
-    df = pd.read_csv(path)
-    try:
-        report = validate_transactions(df, raise_on_error=True)
-        return report["valid_rows"]
-    except DataValidationError as e:
-        _log_validation_failure(e)
+    except DataValidationError as error:
+        _log_validation_failure(error)
         raise
 
 
 def _log_validation_failure(error: DataValidationError) -> None:
-    """report in a log file (audit trail)."""
-    import json
-    from datetime import datetime
-    from pathlib import Path
-
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / f"validation_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
-
-    with open(log_file, "w", encoding="utf-8") as f:
-        json.dump(error.report, f, indent=2, default=str)
-
-    print(f"🚨 {error}")
-    print(f"📄 Rapport détaillé : {log_file}")
+    log_file = log_dir / f"validation_{datetime.now(timezone.utc):%Y%m%d_%H%M%S}.json"
+    log_file.write_text(json.dumps(error.report, indent=2, default=str), encoding="utf-8")
+    logger.error("Dataset validation failed; report saved to %s", log_file)
